@@ -14,7 +14,7 @@ app.use(helmet());
 
 // CORS configuration
 app.use(cors({
-    origin: process.env.FRONTEND_URL || 'https://logistic-gilt-one.vercel.app/',
+    origin: process.env.FRONTEND_URL || 'https://logistic-gilt-one.vercel.app',
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization']
