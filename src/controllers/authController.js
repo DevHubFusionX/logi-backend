@@ -134,18 +134,92 @@ const forgotPassword = asyncHandler(async (req, res) => {
     const { email } = req.body;
 
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-        redirectTo: `${process.env.FRONTEND_URL}/reset-password`
+        redirectTo: `${process.env.FRONTEND_URL}/auth/reset-password`
     });
 
     if (error) {
+        // Log failure
+        await supabaseAdmin.from('auth_audit_log').insert({
+            email,
+            event_type: 'password_reset_request_failed',
+            ip_address: req.ip,
+            user_agent: req.get('user-agent'),
+            metadata: { error: error.message }
+        });
+
         return res.status(400).json({
             error: 'Reset Failed',
             message: error.message
         });
     }
 
+    // Log success
+    await supabaseAdmin.from('auth_audit_log').insert({
+        email,
+        event_type: 'password_reset_requested',
+        ip_address: req.ip,
+        user_agent: req.get('user-agent')
+    });
+
     res.json({
         message: 'Password reset email sent. Please check your inbox.'
+    });
+});
+
+/**
+ * @route   POST /api/auth/reset-password
+ * @desc    Reset password using token
+ */
+const resetPassword = asyncHandler(async (req, res) => {
+    const { token_hash, password } = req.body;
+
+    // 1. Verify the token_hash (type must be 'recovery')
+    const { data: verifyData, error: verifyError } = await supabase.auth.verifyOtp({
+        token_hash,
+        type: 'recovery'
+    });
+
+    if (verifyError || !verifyData.user) {
+        return res.status(400).json({
+            error: 'Invalid Token',
+            message: verifyError?.message || 'Token verification failed'
+        });
+    }
+
+    // 2. Update user's password using the admin client
+    const { error: updateError } = await supabaseAdmin.auth.admin.updateUserById(
+        verifyData.user.id,
+        { password: password }
+    );
+
+    if (updateError) {
+        // Log failure
+        await supabaseAdmin.from('auth_audit_log').insert({
+            user_id: verifyData.user.id,
+            email: verifyData.user.email,
+            event_type: 'password_reset_completion_failed',
+            ip_address: req.ip,
+            user_agent: req.get('user-agent'),
+            metadata: { error: updateError.message }
+        });
+
+        return res.status(500).json({
+            error: 'Update Failed',
+            message: 'Failed to update password'
+        });
+    }
+
+    // 3. Log success
+    await supabaseAdmin.from('auth_audit_log').insert({
+        user_id: verifyData.user.id,
+        email: verifyData.user.email,
+        event_type: 'password_reset_success',
+        ip_address: req.ip,
+        user_agent: req.get('user-agent')
+    });
+
+    res.json({
+        message: 'Password has been reset successfully. You can now login with your new password.'
     });
 });
 
@@ -184,5 +258,6 @@ module.exports = {
     login,
     logout,
     forgotPassword,
+    resetPassword,
     getCurrentUser
 };

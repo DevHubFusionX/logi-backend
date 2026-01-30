@@ -8,7 +8,8 @@ const { validate, validations } = require('../middleware/validate');
 router.post('/register', validations.register, validate, authController.register);
 router.post('/login', validations.login, validate, authController.login);
 router.post('/logout', authController.logout);
-router.post('/forgot-password', authController.forgotPassword);
+router.post('/forgot-password', validations.forgotPassword, validate, authController.forgotPassword);
+router.post('/reset-password', validations.resetPassword, validate, authController.resetPassword);
 
 // Protected routes
 router.get('/me', authenticate, authController.getCurrentUser);

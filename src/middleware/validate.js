@@ -103,10 +103,17 @@ const rules = {
 const validations = {
     register: [rules.email, rules.password, rules.firstName, rules.lastName],
     login: [rules.email, rules.password],
+    forgotPassword: [rules.email],
+    resetPassword: [
+        body('token_hash').notEmpty().withMessage('Token is required'),
+        rules.password
+    ],
     updateProfile: [
-        body('firstName').optional().trim().notEmpty(),
-        body('lastName').optional().trim().notEmpty(),
-        body('phone').optional()
+        body('firstName').optional().trim().notEmpty().escape(),
+        body('lastName').optional().trim().notEmpty().escape(),
+        body('phone').optional().escape(),
+        body('companyName').optional().trim().escape(),
+        body('clientCategory').optional().trim().escape()
     ],
     createShipment: [rules.origin, rules.destination, rules.weight, rules.serviceType],
     pagination: [rules.page, rules.limit],

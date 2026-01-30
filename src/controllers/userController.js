@@ -177,7 +177,7 @@ const getProfile = asyncHandler(async (req, res) => {
  * @desc    Update current user's profile
  */
 const updateProfile = asyncHandler(async (req, res) => {
-    const { firstName, lastName, phone, companyName, clientCategory } = req.body;
+    const { firstName, lastName, phone, companyName, clientCategory, avatarUrl } = req.body;
     const userId = req.user.id;
 
     const updateData = {};
@@ -186,6 +186,7 @@ const updateProfile = asyncHandler(async (req, res) => {
     if (phone !== undefined) updateData.phone = phone;
     if (companyName) updateData.company_name = companyName;
     if (clientCategory) updateData.client_category = clientCategory;
+    if (avatarUrl) updateData.avatar_url = avatarUrl;
     updateData.updated_at = new Date().toISOString();
 
     const { data, error } = await supabase
@@ -201,11 +202,13 @@ const updateProfile = asyncHandler(async (req, res) => {
         message: 'Profile updated successfully',
         user: {
             id: data.id,
+            email: data.email,
             firstName: data.first_name,
             lastName: data.last_name,
             phone: data.phone,
             companyName: data.company_name,
-            clientCategory: data.client_category
+            clientCategory: data.client_category,
+            avatar: data.avatar_url
         }
     });
 });
