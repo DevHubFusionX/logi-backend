@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS profiles (
     email TEXT UNIQUE NOT NULL,
     first_name TEXT,
     last_name TEXT,
+    company_name TEXT,
+    client_category TEXT,
     phone TEXT,
     avatar_url TEXT,
     role TEXT DEFAULT 'user' CHECK (role IN ('admin', 'user', 'driver')),
@@ -22,16 +24,34 @@ CREATE TABLE IF NOT EXISTS profiles (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- Safely add columns if they don't exist (for existing tables)
+DO $$
+BEGIN
+    ALTER TABLE profiles ADD COLUMN IF NOT EXISTS company_name TEXT;
+    ALTER TABLE profiles ADD COLUMN IF NOT EXISTS client_category TEXT;
+END $$;
+
 -- Trigger to create profile on user signup
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-    INSERT INTO public.profiles (id, email, first_name, last_name)
+    INSERT INTO public.profiles (
+        id, 
+        email, 
+        first_name, 
+        last_name,
+        company_name,
+        client_category,
+        phone
+    )
     VALUES (
         NEW.id,
         NEW.email,
         NEW.raw_user_meta_data->>'first_name',
-        NEW.raw_user_meta_data->>'last_name'
+        NEW.raw_user_meta_data->>'last_name',
+        NEW.raw_user_meta_data->>'company_name',
+        NEW.raw_user_meta_data->>'client_category',
+        NEW.raw_user_meta_data->>'phone'
     );
     RETURN NEW;
 END;
@@ -50,7 +70,7 @@ CREATE TABLE IF NOT EXISTS addresses (
     user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
     label TEXT, -- 'Home', 'Office', etc.
     street TEXT NOT NULL,
-    city TEXT NOT NULL,
+    city TEXT NOT NULL DEFAULT 'Lagos',
     state TEXT,
     postal_code TEXT,
     country TEXT DEFAULT 'USA',
@@ -58,7 +78,7 @@ CREATE TABLE IF NOT EXISTS addresses (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX idx_addresses_user ON addresses(user_id);
+CREATE INDEX IF NOT EXISTS idx_addresses_user ON addresses(user_id);
 
 -- =============================================
 -- VEHICLES TABLE
@@ -102,12 +122,17 @@ CREATE TABLE IF NOT EXISTS drivers (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX idx_drivers_user ON drivers(user_id);
-CREATE INDEX idx_drivers_status ON drivers(status);
+CREATE INDEX IF NOT EXISTS idx_drivers_user ON drivers(user_id);
+CREATE INDEX IF NOT EXISTS idx_drivers_status ON drivers(status);
 
--- Update vehicles foreign key
-ALTER TABLE vehicles ADD CONSTRAINT fk_vehicle_driver 
-    FOREIGN KEY (assigned_driver_id) REFERENCES drivers(id) ON DELETE SET NULL;
+-- Safely add foreign key constraint if it doesn't exist
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_vehicle_driver') THEN
+        ALTER TABLE vehicles ADD CONSTRAINT fk_vehicle_driver 
+            FOREIGN KEY (assigned_driver_id) REFERENCES drivers(id) ON DELETE SET NULL;
+    END IF;
+END $$;
 
 -- =============================================
 -- SHIPMENTS TABLE
@@ -119,7 +144,7 @@ CREATE TABLE IF NOT EXISTS shipments (
     driver_id UUID REFERENCES drivers(id),
     
     -- Origin
-    origin TEXT NOT NULL,
+    origin TEXT NOT NULL DEFAULT 'Lagos',
     origin_lat DECIMAL(10,8),
     origin_lng DECIMAL(11,8),
     
@@ -141,8 +166,8 @@ CREATE TABLE IF NOT EXISTS shipments (
     special_instructions TEXT,
     
     -- Service & Package Info
-    service_type TEXT DEFAULT 'standard' CHECK (service_type IN ('express', 'priority', 'standard', 'economy')),
-    package_type TEXT DEFAULT 'parcel' CHECK (package_type IN ('envelope', 'box', 'parcel', 'pallet', 'heavy_load')),
+    service_type TEXT DEFAULT 'standard' CHECK (service_type IN ('express', 'priority', 'standard', 'economy', 'van', 'truck', 'motorcycle', 'car', '5 tons', '10 tons', '15 tons')),
+    package_type TEXT DEFAULT 'parcel' CHECK (package_type IN ('envelope', 'box', 'parcel', 'pallet', 'heavy_load', 'frozen foods', 'pharmaceuticals', 'general cargo')),
     
     -- Status
     status TEXT DEFAULT 'pending' CHECK (status IN ('pending', 'processing', 'in_transit', 'out_for_delivery', 'delivered', 'cancelled', 'returned')),
@@ -163,11 +188,11 @@ CREATE TABLE IF NOT EXISTS shipments (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX idx_shipments_tracking ON shipments(tracking_number);
-CREATE INDEX idx_shipments_sender ON shipments(sender_id);
-CREATE INDEX idx_shipments_driver ON shipments(driver_id);
-CREATE INDEX idx_shipments_status ON shipments(status);
-CREATE INDEX idx_shipments_created ON shipments(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_shipments_tracking ON shipments(tracking_number);
+CREATE INDEX IF NOT EXISTS idx_shipments_sender ON shipments(sender_id);
+CREATE INDEX IF NOT EXISTS idx_shipments_driver ON shipments(driver_id);
+CREATE INDEX IF NOT EXISTS idx_shipments_status ON shipments(status);
+CREATE INDEX IF NOT EXISTS idx_shipments_created ON shipments(created_at DESC);
 
 -- =============================================
 -- TRACKING EVENTS TABLE
@@ -183,8 +208,8 @@ CREATE TABLE IF NOT EXISTS tracking_events (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX idx_tracking_shipment ON tracking_events(shipment_id);
-CREATE INDEX idx_tracking_created ON tracking_events(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tracking_shipment ON tracking_events(shipment_id);
+CREATE INDEX IF NOT EXISTS idx_tracking_created ON tracking_events(created_at DESC);
 
 -- =============================================
 -- PAYMENTS TABLE
@@ -201,7 +226,7 @@ CREATE TABLE IF NOT EXISTS payments (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX idx_payments_shipment ON payments(shipment_id);
+CREATE INDEX IF NOT EXISTS idx_payments_shipment ON payments(shipment_id);
 
 -- =============================================
 -- SHIPMENT DOCUMENTS TABLE
@@ -247,8 +272,8 @@ CREATE TABLE IF NOT EXISTS support_tickets (
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX idx_tickets_user ON support_tickets(user_id);
-CREATE INDEX idx_tickets_status ON support_tickets(status);
+CREATE INDEX IF NOT EXISTS idx_tickets_user ON support_tickets(user_id);
+CREATE INDEX IF NOT EXISTS idx_tickets_status ON support_tickets(status);
 
 -- =============================================
 -- TICKET REPLIES TABLE
@@ -262,7 +287,7 @@ CREATE TABLE IF NOT EXISTS ticket_replies (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX idx_replies_ticket ON ticket_replies(ticket_id);
+CREATE INDEX IF NOT EXISTS idx_replies_ticket ON ticket_replies(ticket_id);
 
 -- =============================================
 -- FAQS TABLE
@@ -277,6 +302,16 @@ CREATE TABLE IF NOT EXISTS faqs (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+DO $$
+BEGIN
+    -- Remove duplicates if any exist
+    DELETE FROM faqs a USING faqs b WHERE a.id < b.id AND a.question = b.question;
+
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'faqs_question_key') THEN
+        ALTER TABLE faqs ADD CONSTRAINT faqs_question_key UNIQUE (question);
+    END IF;
+END $$;
 
 -- =============================================
 -- CONTACT SUBMISSIONS TABLE
@@ -305,8 +340,8 @@ CREATE TABLE IF NOT EXISTS notifications (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX idx_notifications_user ON notifications(user_id);
-CREATE INDEX idx_notifications_read ON notifications(is_read);
+CREATE INDEX IF NOT EXISTS idx_notifications_user ON notifications(user_id);
+CREATE INDEX IF NOT EXISTS idx_notifications_read ON notifications(is_read);
 
 -- =============================================
 -- CHAT SESSIONS TABLE
@@ -332,7 +367,7 @@ CREATE TABLE IF NOT EXISTS chat_messages (
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
-CREATE INDEX idx_chat_session ON chat_messages(session_id);
+CREATE INDEX IF NOT EXISTS idx_chat_session ON chat_messages(session_id);
 
 -- =============================================
 -- PRICING CONFIGURATIONS TABLE
@@ -364,39 +399,49 @@ ALTER TABLE payments ENABLE ROW LEVEL SECURITY;
 ALTER TABLE pricing_configs ENABLE ROW LEVEL SECURITY;
 
 -- Profiles policies
+DROP POLICY IF EXISTS "Users can view own profile" ON profiles;
 CREATE POLICY "Users can view own profile" ON profiles
     FOR SELECT USING (auth.uid() = id);
     
+DROP POLICY IF EXISTS "Users can update own profile" ON profiles;
 CREATE POLICY "Users can update own profile" ON profiles
     FOR UPDATE USING (auth.uid() = id);
 
 -- Addresses policies
+DROP POLICY IF EXISTS "Users can manage own addresses" ON addresses;
 CREATE POLICY "Users can manage own addresses" ON addresses
     FOR ALL USING (auth.uid() = user_id);
 
 -- Shipments policies
+DROP POLICY IF EXISTS "Users can view own shipments" ON shipments;
 CREATE POLICY "Users can view own shipments" ON shipments
     FOR SELECT USING (auth.uid() = sender_id);
     
+DROP POLICY IF EXISTS "Users can create shipments" ON shipments;
 CREATE POLICY "Users can create shipments" ON shipments
     FOR INSERT WITH CHECK (auth.uid() = sender_id);
 
 -- Tracking events policies
+DROP POLICY IF EXISTS "Anyone can view tracking events" ON tracking_events;
 CREATE POLICY "Anyone can view tracking events" ON tracking_events
     FOR SELECT USING (true);
 
 -- Support tickets policies
+DROP POLICY IF EXISTS "Users can manage own tickets" ON support_tickets;
 CREATE POLICY "Users can manage own tickets" ON support_tickets
     FOR ALL USING (auth.uid() = user_id);
 
 -- Notifications policies
+DROP POLICY IF EXISTS "Users can view own notifications" ON notifications;
 CREATE POLICY "Users can view own notifications" ON notifications
     FOR SELECT USING (auth.uid() = user_id);
     
+DROP POLICY IF EXISTS "Users can update own notifications" ON notifications;
 CREATE POLICY "Users can update own notifications" ON notifications
     FOR UPDATE USING (auth.uid() = user_id);
 
 -- Payments policies
+DROP POLICY IF EXISTS "Users can view own payments" ON payments;
 CREATE POLICY "Users can view own payments" ON payments
     FOR SELECT USING (
         EXISTS (
@@ -407,6 +452,7 @@ CREATE POLICY "Users can view own payments" ON payments
     );
 
 -- Pricing configs policies
+DROP POLICY IF EXISTS "Anyone can view pricing configs" ON pricing_configs;
 CREATE POLICY "Anyone can view pricing configs" ON pricing_configs
     FOR SELECT USING (true);
 
@@ -420,7 +466,8 @@ INSERT INTO faqs (question, answer, category, order_index) VALUES
 ('What are your delivery times?', 'Express: 1 day, Priority: 2-3 days, Standard: 5-7 days, Economy: 7-10 days.', 'shipping', 2),
 ('How do I create an account?', 'Click the Sign Up button and fill in your details. You will receive a confirmation email.', 'general', 3),
 ('What payment methods do you accept?', 'We accept all major credit cards, PayPal, and bank transfers.', 'billing', 4),
-('How do I cancel a shipment?', 'You can cancel a shipment from your dashboard if it has not been picked up yet.', 'shipping', 5);
+('How do I cancel a shipment?', 'You can cancel a shipment from your dashboard if it has not been picked up yet.', 'shipping', 5)
+ON CONFLICT (question) DO NOTHING;
 
 -- Insert default pricing configs
 INSERT INTO pricing_configs (service_type, base_price, price_per_kg, price_per_km) VALUES

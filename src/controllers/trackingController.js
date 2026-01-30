@@ -7,52 +7,60 @@ const { calculateDistance } = require('../utils/helpers');
  * @desc    Track shipment by tracking number
  */
 const trackShipment = asyncHandler(async (req, res) => {
-    const { trackingNumber } = req.params;
+    const trackingNumber = req.params.trackingNumber?.trim();
 
-    const { data, error } = await supabase
+    if (!trackingNumber) {
+        return res.status(400).json({ error: 'Bad Request', message: 'Tracking number is required' });
+    }
+
+    // Check if input is a valid UUID
+    const isUUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-5][0-9a-f]{3}-[089ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(trackingNumber);
+
+    let query = supabase
         .from('shipments')
         .select(`
-            id,
-            tracking_number,
-            status,
-            origin,
-            destination,
-            estimated_delivery,
-            service_type,
-            receiver_name,
-            created_at,
-            delivered_at,
+            *,
+            sender:profiles!shipments_sender_id_fkey(first_name, last_name, email, phone),
+            driver:drivers(
+                id,
+                profile:profiles(first_name, last_name, phone, avatar_url),
+                vehicle:vehicles!drivers_vehicle_id_fkey(make, model, plate_number, type)
+            ),
             tracking_events(*)
-        `)
-        .eq('tracking_number', trackingNumber)
-        .single();
+        `);
+
+    if (isUUID) {
+        query = query.or(`tracking_number.ilike.${trackingNumber},id.eq.${trackingNumber}`);
+    } else {
+        query = query.ilike('tracking_number', trackingNumber);
+    }
+
+    const { data, error } = await query.single();
 
     if (error || !data) {
+        if (error && error.code !== 'PGRST116') {
+            console.error('Database error in trackShipment:', error);
+        }
         return res.status(404).json({
             error: 'Not Found',
             message: 'No shipment found with this tracking number'
         });
     }
 
+    // Map tracking_events to events for frontend compatibility
+    const shipment = {
+        ...data,
+        events: data.tracking_events || []
+    };
+
     // Sort tracking events by date
-    if (data.tracking_events) {
-        data.tracking_events.sort((a, b) =>
+    if (shipment.events) {
+        shipment.events.sort((a, b) =>
             new Date(b.created_at) - new Date(a.created_at)
         );
     }
 
-    res.json({
-        trackingNumber: data.tracking_number,
-        status: data.status,
-        origin: data.origin,
-        destination: data.destination,
-        estimatedDelivery: data.estimated_delivery,
-        serviceType: data.service_type,
-        receiverName: data.receiver_name,
-        createdAt: data.created_at,
-        deliveredAt: data.delivered_at,
-        events: data.tracking_events || []
-    });
+    res.json(shipment);
 });
 
 /**

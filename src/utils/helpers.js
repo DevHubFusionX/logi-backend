@@ -80,11 +80,37 @@ const calculateDistance = (lat1, lon1, lat2, lon2) => {
 
 const toRad = (value) => value * Math.PI / 180;
 
+/**
+ * Convert camelCase object keys to snake_case
+ */
+const toSnakeCase = (obj) => {
+    return Object.keys(obj).reduce((acc, key) => {
+        const snakeKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+        acc[snakeKey] = obj[key];
+        return acc;
+    }, {});
+};
+
+/**
+ * Convert snake_case object keys to camelCase
+ */
+const toCamelCase = (obj) => {
+    return Object.keys(obj).reduce((acc, key) => {
+        const camelKey = key.replace(/([-_][a-z])/g, group =>
+            group.toUpperCase().replace('-', '').replace('_', '')
+        );
+        acc[camelKey] = obj[key];
+        return acc;
+    }, {});
+};
+
 module.exports = {
     parsePagination,
     paginatedResponse,
     successResponse,
     cleanObject,
     formatDate,
-    calculateDistance
+    calculateDistance,
+    toSnakeCase,
+    toCamelCase
 };

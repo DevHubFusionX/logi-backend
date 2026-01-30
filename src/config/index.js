@@ -6,7 +6,7 @@ module.exports = {
         anonKey: process.env.SUPABASE_ANON_KEY,
         serviceKey: process.env.SUPABASE_SERVICE_ROLE_KEY
     },
-    frontendUrl: process.env.FRONTEND_URL || 'http://localhost:3000',
+    frontendUrl: process.env.FRONTEND_URL || 'http://localhost:5173',
 
     // Shipment status constants
     shipmentStatus: {
@@ -40,6 +40,19 @@ module.exports = {
         IN_PROGRESS: 'in_progress',
         RESOLVED: 'resolved',
         CLOSED: 'closed'
+    },
+
+    // Service types (trucks only as per business requirements)
+    serviceTypes: {
+        FIVE_TONS: '5 tons',
+        TEN_TONS: '10 tons',
+        FIFTEEN_TONS: '15 tons'
+    },
+
+    // Validate if a service type is supported
+    isValidServiceType: (type) => {
+        const valid = ['5 tons', '10 tons', '15 tons'];
+        return valid.includes(type?.toLowerCase().trim());
     },
 
     // Pagination defaults

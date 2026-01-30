@@ -15,11 +15,6 @@ router.get('/profile', userController.getProfile);
 router.put('/profile', validations.updateProfile, validate, userController.updateProfile);
 router.post('/change-password', userController.changePassword);
 
-// Address routes
-router.get('/addresses', userController.getAddresses);
-router.post('/addresses', userController.addAddress);
-router.delete('/addresses/:id', userController.deleteAddress);
-
 // Notification routes
 router.get('/notifications', userController.getNotifications);
 router.post('/notifications/:id/read', userController.markNotificationRead);

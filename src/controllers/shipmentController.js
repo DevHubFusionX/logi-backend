@@ -16,12 +16,9 @@ const getAllShipments = asyncHandler(async (req, res) => {
     let query = supabaseAdmin
         .from('shipments')
         .select(`
-            *,
+            id, tracking_number, origin, destination, status, shipping_fee, weight, estimated_delivery, created_at, updated_at, service_type, package_type, description, receiver_name, receiver_email, receiver_phone,
             sender:profiles!shipments_sender_id_fkey(id, first_name, last_name, email),
-            driver:drivers(profile:profiles(id, first_name, last_name, email, phone)),
-            receiver_name,
-            receiver_email,
-            receiver_phone
+            driver:drivers(profile:profiles(id, first_name, last_name, email, phone))
         `, { count: 'exact' });
 
     // Apply filters
@@ -92,71 +89,25 @@ const getShipmentById = asyncHandler(async (req, res) => {
     res.json(data);
 });
 
+const shipmentService = require('../services/shipmentService');
+
 /**
  * @route   POST /api/shipments
  * @desc    Create new shipment
  */
 const createShipment = asyncHandler(async (req, res) => {
-    const {
-        origin,
-        destination,
-        receiverName,
-        receiverEmail,
-        receiverPhone,
-        weight,
-        dimensions,
-        serviceType,
-        packageType,
-        description,
-        declaredValue,
-        specialInstructions
-    } = req.body;
+    // Validation is now handled by express-validator middleware in routes
 
-    // Validate weight
-    const parsedWeight = parseFloat(weight);
-    if (!parsedWeight || parsedWeight <= 0) {
-        return res.status(400).json({
-            error: 'Validation Error',
-            message: 'Weight must be a positive number'
-        });
-    }
+    // Create shipment using service
+    const data = await shipmentService.createShipment(req.user.id, req.body);
 
-    const trackingNumber = generateTrackingNumber();
-    const estimatedDelivery = calculateETA(serviceType);
-
-    const { data, error } = await supabaseAdmin
-        .from('shipments')
-        .insert({
-            sender_id: req.user.id,
-            tracking_number: trackingNumber,
-            origin,
-            destination,
-            receiver_name: receiverName,
-            receiver_email: receiverEmail,
-            receiver_phone: receiverPhone,
-            weight: parsedWeight,
-            dimensions,
-            service_type: serviceType || 'standard',
-            package_type: packageType || 'parcel',
-            description,
-            declared_value: declaredValue ? parseFloat(declaredValue) : null,
-            special_instructions: specialInstructions,
-            status: config.shipmentStatus.PENDING,
-            estimated_delivery: estimatedDelivery,
-            shipping_fee: await calculatePriceInternal(serviceType || 'standard', parsedWeight)
-        })
-        .select()
-        .single();
-
-    if (error) throw error;
-
-    // Create initial tracking event
-    await supabaseAdmin.from('tracking_events').insert({
-        shipment_id: data.id,
-        status: config.shipmentStatus.PENDING,
-        location: origin,
-        description: 'Shipment created and pending pickup'
-    });
+    // Create initial tracking event using service
+    await shipmentService.addTrackingEvent(
+        data.id,
+        config.shipmentStatus.PENDING,
+        req.body.origin,
+        'Shipment created and pending pickup'
+    );
 
     res.status(201).json({
         message: 'Shipment created successfully',
@@ -199,18 +150,23 @@ const updateShipment = asyncHandler(async (req, res) => {
     if (updates.receiverName) dbUpdates.receiver_name = updates.receiverName;
     if (updates.receiverEmail) dbUpdates.receiver_email = updates.receiverEmail;
     if (updates.receiverPhone) dbUpdates.receiver_phone = updates.receiverPhone;
-    if (updates.weight) dbUpdates.weight = parseFloat(updates.weight);
-    if (updates.origin) dbUpdates.origin = updates.origin;
-    if (updates.destination) dbUpdates.destination = updates.destination;
-    if (updates.serviceType) dbUpdates.service_type = updates.serviceType;
-    if (updates.packageType) dbUpdates.package_type = updates.packageType;
+    if (updates.weight || updates.cargoWeightKg) {
+        dbUpdates.weight = parseFloat(updates.weight || updates.cargoWeightKg);
+    }
+    if (updates.origin) dbUpdates.origin = typeof updates.origin === 'object' ? `${updates.origin.address}, ${updates.origin.city}, ${updates.origin.state}` : updates.origin;
+    if (updates.destination) dbUpdates.destination = typeof updates.destination === 'object' ? `${updates.destination.address}, ${updates.destination.city}, ${updates.destination.state}` : updates.destination;
+    if (updates.serviceType) dbUpdates.service_type = updates.serviceType.toLowerCase();
+    if (updates.packageType) dbUpdates.package_type = updates.packageType.toLowerCase();
     if (updates.description) dbUpdates.description = updates.description;
-    if (updates.specialInstructions) dbUpdates.special_instructions = updates.specialInstructions;
+    if (updates.specialInstructions || updates.notes) dbUpdates.special_instructions = updates.specialInstructions || updates.notes;
+    if (updates.dimensions) dbUpdates.dimensions = updates.dimensions;
+    if (updates.declaredValue) dbUpdates.declared_value = parseFloat(updates.declaredValue);
     if (updates.driverId && req.userRole === 'admin') dbUpdates.driver_id = updates.driverId;
 
     // Recalculate shipping fee and ETA if weight or service type changed
-    if (updates.weight || updates.serviceType) {
-        const newWeight = updates.weight ? parseFloat(updates.weight) : shipment.weight;
+    const weightChanged = updates.weight || updates.cargoWeightKg;
+    if (weightChanged || updates.serviceType) {
+        const newWeight = weightChanged ? parseFloat(updates.weight || updates.cargoWeightKg) : shipment.weight;
         const newServiceType = updates.serviceType || shipment.service_type;
 
         dbUpdates.shipping_fee = await calculatePriceInternal(newServiceType, newWeight);
@@ -359,6 +315,7 @@ const getUserShipments = asyncHandler(async (req, res) => {
         .from('shipments')
         .select(`
             *,
+            sender:profiles!shipments_sender_id_fkey(id, first_name, last_name, email, phone),
             driver:drivers(profile:profiles(id, first_name, last_name, email, phone))
         `, { count: 'exact' })
         .eq('sender_id', userId)

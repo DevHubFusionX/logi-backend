@@ -20,10 +20,9 @@ const getPricingConfigs = asyncHandler(async (req, res) => {
     // Auto-seed if empty
     if (!data || data.length === 0) {
         const defaults = [
-            { service_type: 'standard', base_price: 1000.00, price_per_kg: 50.00, price_per_km: 10.00 },
-            { service_type: 'express', base_price: 2500.00, price_per_kg: 100.00, price_per_km: 20.00 },
-            { service_type: 'priority', base_price: 1800.00, price_per_kg: 75.00, price_per_km: 15.00 },
-            { service_type: 'economy', base_price: 500.00, price_per_kg: 30.00, price_per_km: 5.00 }
+            { service_type: '5 tons', base_price: 45000.00, price_per_kg: 50.00, price_per_km: 100.00 },
+            { service_type: '10 tons', base_price: 85000.00, price_per_kg: 75.00, price_per_km: 150.00 },
+            { service_type: '15 tons', base_price: 125000.00, price_per_kg: 100.00, price_per_km: 200.00 }
         ];
 
         const { data: seeded, error: seedError } = await supabaseAdmin
@@ -76,22 +75,27 @@ const updatePricingConfig = asyncHandler(async (req, res) => {
  * Internal helper to calculate price
  */
 const calculatePriceInternal = async (serviceType, weight, distanceKm = 0) => {
+    const normalizedServiceType = serviceType ? serviceType.toLowerCase().trim() : 'standard';
+
     const { data, error } = await supabaseAdmin
         .from('pricing_configs')
         .select('*')
-        .eq('service_type', serviceType)
+        .ilike('service_type', normalizedServiceType)
         .eq('is_active', true)
-        .single();
+        .order('id', { ascending: false }) // Get latest if multiple exist
+        .limit(1)
+        .maybeSingle(); // Better than .single() as it doesn't error on 0 results
 
     if (error || !data) {
         // Fallback default prices if config not found
         const fallbacks = {
             standard: { base: 1000, kg: 50, km: 10 },
             express: { base: 2500, kg: 100, km: 20 },
-            priority: { base: 1800, kg: 75, km: 15 },
-            economy: { base: 500, kg: 30, km: 5 }
+            '5 tons': { base: 45000, kg: 50, km: 100 },
+            '10 tons': { base: 85000, kg: 75, km: 150 },
+            '15 tons': { base: 125000, kg: 100, km: 200 }
         };
-        const f = fallbacks[serviceType] || fallbacks.standard;
+        const f = fallbacks[serviceType.toLowerCase()] || fallbacks.standard;
         return f.base + (f.kg * (weight || 0)) + (f.km * distanceKm);
     }
 

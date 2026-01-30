@@ -35,6 +35,8 @@ const getAllUsers = asyncHandler(async (req, res) => {
         firstName: u.first_name,
         lastName: u.last_name,
         phone: u.phone,
+        companyName: u.company_name,
+        clientCategory: u.client_category,
         role: u.role,
         avatar: u.avatar_url,
         createdAt: u.created_at
@@ -74,6 +76,8 @@ const getUserById = asyncHandler(async (req, res) => {
         firstName: data.first_name,
         lastName: data.last_name,
         phone: data.phone,
+        companyName: data.company_name,
+        clientCategory: data.client_category,
         role: data.role,
         avatar: data.avatar_url,
         createdAt: data.created_at
@@ -155,6 +159,8 @@ const getProfile = asyncHandler(async (req, res) => {
         firstName: data.first_name,
         lastName: data.last_name,
         phone: data.phone,
+        companyName: data.company_name,
+        clientCategory: data.client_category,
         role: data.role,
         avatar: data.avatar_url,
         createdAt: data.created_at,
@@ -171,13 +177,15 @@ const getProfile = asyncHandler(async (req, res) => {
  * @desc    Update current user's profile
  */
 const updateProfile = asyncHandler(async (req, res) => {
-    const { firstName, lastName, phone } = req.body;
+    const { firstName, lastName, phone, companyName, clientCategory } = req.body;
     const userId = req.user.id;
 
     const updateData = {};
     if (firstName) updateData.first_name = firstName;
     if (lastName) updateData.last_name = lastName;
     if (phone !== undefined) updateData.phone = phone;
+    if (companyName) updateData.company_name = companyName;
+    if (clientCategory) updateData.client_category = clientCategory;
     updateData.updated_at = new Date().toISOString();
 
     const { data, error } = await supabase
@@ -195,7 +203,9 @@ const updateProfile = asyncHandler(async (req, res) => {
             id: data.id,
             firstName: data.first_name,
             lastName: data.last_name,
-            phone: data.phone
+            phone: data.phone,
+            companyName: data.company_name,
+            clientCategory: data.client_category
         }
     });
 });
@@ -235,7 +245,7 @@ const changePassword = asyncHandler(async (req, res) => {
  * @desc    Get user's saved addresses
  */
 const getAddresses = asyncHandler(async (req, res) => {
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
         .from('addresses')
         .select('*')
         .eq('user_id', req.user.id)
@@ -251,26 +261,28 @@ const getAddresses = asyncHandler(async (req, res) => {
  * @desc    Add new address
  */
 const addAddress = asyncHandler(async (req, res) => {
-    const { label, street, city, state, postalCode, country, isDefault } = req.body;
+    const { label, name, address, street, city, state, postalCode, country, phone, isDefault } = req.body;
 
     // If setting as default, unset other defaults
     if (isDefault) {
-        await supabase
+        await supabaseAdmin
             .from('addresses')
             .update({ is_default: false })
             .eq('user_id', req.user.id);
     }
 
-    const { data, error } = await supabase
+    const { data, error } = await supabaseAdmin
         .from('addresses')
         .insert({
             user_id: req.user.id,
             label,
-            street,
+            contact_name: name,
+            phone,
+            street: street || address, // Handle both frontend 'address' and backend 'street'
             city,
             state,
             postal_code: postalCode,
-            country,
+            country: country || 'Nigeria', // Default to Nigeria if not provided
             is_default: isDefault || false
         })
         .select()
@@ -282,13 +294,80 @@ const addAddress = asyncHandler(async (req, res) => {
 });
 
 /**
+ * @route   PUT /api/users/addresses/:id
+ * @desc    Update address
+ */
+const updateAddress = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+    const { label, name, address, street, city, state, postalCode, country, phone, isDefault } = req.body;
+
+    // If setting as default, unset other defaults
+    if (isDefault) {
+        await supabaseAdmin
+            .from('addresses')
+            .update({ is_default: false })
+            .eq('user_id', req.user.id);
+    }
+
+    const updateData = {};
+    if (label) updateData.label = label;
+    if (name) updateData.contact_name = name;
+    if (phone) updateData.phone = phone;
+    if (street || address) updateData.street = street || address;
+    if (city) updateData.city = city;
+    if (state) updateData.state = state;
+    if (postalCode) updateData.postal_code = postalCode;
+    if (country) updateData.country = country;
+    if (isDefault !== undefined) updateData.is_default = isDefault;
+
+    const { data, error } = await supabaseAdmin
+        .from('addresses')
+        .update(updateData)
+        .eq('id', id)
+        .eq('user_id', req.user.id)
+        .select()
+        .single();
+
+    if (error) throw error;
+
+    res.json(data);
+});
+
+/**
+ * @route   POST /api/users/addresses/:id/set-default
+ * @desc    Set address as default
+ */
+const setDefaultAddress = asyncHandler(async (req, res) => {
+    const { id } = req.params;
+
+    // Unset all defaults first
+    await supabaseAdmin
+        .from('addresses')
+        .update({ is_default: false })
+        .eq('user_id', req.user.id);
+
+    // Set new default
+    const { data, error } = await supabaseAdmin
+        .from('addresses')
+        .update({ is_default: true })
+        .eq('id', id)
+        .eq('user_id', req.user.id)
+        .select()
+        .single();
+
+    if (error) throw error;
+
+    res.json(data);
+});
+
+/**
  * @route   DELETE /api/users/addresses/:id
  * @desc    Delete address
  */
 const deleteAddress = asyncHandler(async (req, res) => {
     const { id } = req.params;
 
-    const { error } = await supabase
+    const { error } = await supabaseAdmin
         .from('addresses')
         .delete()
         .eq('id', id)
@@ -363,6 +442,8 @@ module.exports = {
     changePassword,
     getAddresses,
     addAddress,
+    updateAddress,
+    setDefaultAddress,
     deleteAddress,
     getNotifications,
     markNotificationRead

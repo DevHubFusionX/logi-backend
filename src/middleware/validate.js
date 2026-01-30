@@ -27,19 +27,23 @@ const rules = {
         .withMessage('Valid email is required'),
 
     password: body('password')
-        .isLength({ min: 6 })
-        .withMessage('Password must be at least 6 characters'),
+        .isLength({ min: 8 })
+        .withMessage('Password must be at least 8 characters')
+        .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]/)
+        .withMessage('Password must contain at least one uppercase letter, one lowercase letter, one number and one special character'),
 
     // User validations
     firstName: body('firstName')
         .trim()
         .notEmpty()
-        .withMessage('First name is required'),
+        .withMessage('First name is required')
+        .escape(),
 
     lastName: body('lastName')
         .trim()
         .notEmpty()
-        .withMessage('Last name is required'),
+        .withMessage('Last name is required')
+        .escape(),
 
     phone: body('phone')
         .optional()
@@ -48,17 +52,30 @@ const rules = {
 
     // Shipment validations
     origin: body('origin')
+        .trim()
         .notEmpty()
-        .withMessage('Origin address is required'),
+        .withMessage('Origin address is required')
+        .escape(),
 
     destination: body('destination')
+        .trim()
         .notEmpty()
-        .withMessage('Destination address is required'),
+        .withMessage('Destination address is required')
+        .escape(),
 
     weight: body('weight')
-        .optional()
-        .isFloat({ min: 0 })
+        .isFloat({ min: 0.1 })
         .withMessage('Weight must be a positive number'),
+
+    serviceType: body('serviceType')
+        .optional()
+        .custom((val) => {
+            const valid = ['5 tons', '10 tons', '15 tons'];
+            if (val && !valid.includes(val.toLowerCase().trim())) {
+                throw new Error('Invalid service type. Must be: 5 tons, 10 tons, or 15 tons');
+            }
+            return true;
+        }),
 
     // Pagination
     page: query('page')
@@ -91,7 +108,7 @@ const validations = {
         body('lastName').optional().trim().notEmpty(),
         body('phone').optional()
     ],
-    createShipment: [rules.origin, rules.destination],
+    createShipment: [rules.origin, rules.destination, rules.weight, rules.serviceType],
     pagination: [rules.page, rules.limit],
     idParam: [rules.id],
     trackingNumber: [rules.trackingNumber]

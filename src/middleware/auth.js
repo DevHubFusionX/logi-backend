@@ -17,8 +17,25 @@ const authenticate = async (req, res, next) => {
 
         const token = authHeader.split(' ')[1];
 
-        // Verify the token with Supabase
-        const { data: { user }, error } = await supabase.auth.getUser(token);
+        // Verify the token with Supabase - with basic retry for socket errors
+        let user, error;
+        let retries = 3;
+        while (retries > 0) {
+            try {
+                const result = await supabase.auth.getUser(token);
+                user = result.data.user;
+                error = result.error;
+                break;
+            } catch (err) {
+                retries--;
+                if (retries === 0) {
+                    console.error('Final Auth middleware fetch error:', err);
+                    throw err;
+                }
+                console.warn(`Auth fetch failed, retrying... (${retries} left)`);
+                await new Promise(resolve => setTimeout(resolve, 500));
+            }
+        }
 
         if (error || !user) {
             return res.status(401).json({

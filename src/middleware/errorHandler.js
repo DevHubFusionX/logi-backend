@@ -9,7 +9,7 @@ const errorHandler = (err, req, res, next) => {
     let message = err.message || 'Internal Server Error';
     let error = err.name || 'Error';
 
-    // Supabase specific errors
+    // Supabase / Postgres specific errors
     if (err.code) {
         switch (err.code) {
             case 'PGRST116':
@@ -17,22 +17,43 @@ const errorHandler = (err, req, res, next) => {
                 message = 'Resource not found';
                 error = 'Not Found';
                 break;
-            case '23505':
+            case '23505': // Unique violation
                 statusCode = 409;
-                message = 'Resource already exists';
+                message = 'A record with this data already exists';
                 error = 'Conflict';
                 break;
-            case '23503':
+            case '23503': // Foreign key violation
                 statusCode = 400;
-                message = 'Referenced resource does not exist';
+                message = 'This operation refers to a resource that does not exist';
                 error = 'Bad Request';
                 break;
-            case '22P02':
+            case '23502': // Not null violation
                 statusCode = 400;
-                message = 'Invalid input format';
+                message = 'Missing required fields in database operation';
                 error = 'Bad Request';
+                break;
+            case '22P02': // Invalid text representation
+                statusCode = 400;
+                message = 'Invalid data format provided';
+                error = 'Bad Request';
+                break;
+            case '42P01': // Undefined table
+                statusCode = 500;
+                message = 'Server configuration error: Database table missing';
+                error = 'Database Error';
                 break;
         }
+    }
+
+    // JWT / Auth Errors
+    if (err.name === 'JsonWebTokenError') {
+        statusCode = 401;
+        message = 'Invalid token. Please log in again.';
+        error = 'Unauthorized';
+    } else if (err.name === 'TokenExpiredError') {
+        statusCode = 401;
+        message = 'Session expired. Please log in again.';
+        error = 'Unauthorized';
     }
 
     // Validation errors

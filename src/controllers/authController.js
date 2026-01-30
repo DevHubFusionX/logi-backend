@@ -6,7 +6,7 @@ const { asyncHandler } = require('../middleware/errorHandler');
  * @desc    Register a new user (with email verification)
  */
 const register = asyncHandler(async (req, res) => {
-    const { email, password, firstName, lastName, phone } = req.body;
+    const { email, password, firstName, lastName, phoneNumber, companyName, clientCategory, address } = req.body;
 
     // Use standard signUp to trigger email verification
     const { data: authData, error: authError } = await supabase.auth.signUp({
@@ -16,7 +16,9 @@ const register = asyncHandler(async (req, res) => {
             data: {
                 first_name: firstName,
                 last_name: lastName,
-                phone: phone || null
+                phone: phoneNumber || null,
+                company_name: companyName,
+                client_category: clientCategory
             },
             emailRedirectTo: `${process.env.FRONTEND_URL}/auth/callback`
         }
@@ -27,6 +29,24 @@ const register = asyncHandler(async (req, res) => {
             error: 'Registration Failed',
             message: authError.message
         });
+    }
+
+    // Add address if provided
+    if (address && authData.user) {
+        const { error: addressError } = await supabaseAdmin
+            .from('addresses')
+            .insert({
+                user_id: authData.user.id,
+                street: address,
+                city: 'Unknown', // Need to parse or ask user for structured address
+                is_default: true,
+                label: 'Main Office'
+            });
+
+        if (addressError) {
+            console.error('Failed to save address:', addressError);
+            // Don't fail registration for address error, just log it
+        }
     }
 
     // If session is null, it means verification email was sent
@@ -41,8 +61,11 @@ const register = asyncHandler(async (req, res) => {
             id: authData.user.id,
             email: authData.user.email,
             firstName,
-            lastName
-        }
+            lastName,
+            companyName,
+            role: 'user'
+        },
+        token: authData.session?.access_token
     });
 });
 
