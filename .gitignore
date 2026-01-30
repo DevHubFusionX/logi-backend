@@ -2,8 +2,6 @@
 node_modules/
 
 # Environment files
-.env
-.env.local
 .env.*.local
 
 # Logs
@@ -16,9 +14,9 @@ npm-debug.log*
 Thumbs.db
 
 # IDE
-.vscode/
 .idea/
 
 # Build output
 dist/
 build/
+config.bat
